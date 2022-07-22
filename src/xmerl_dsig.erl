@@ -20,7 +20,7 @@
 %% enveloped mode.
 -module(xmerl_dsig).
 
--export([verify/1, verify/2, sign/3, sign/4, strip/1, digest/1]).
+-export([verify/1, verify/2, sign/3, sign/4, sign/5, strip/1, digest/1]).
 
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("public_key/include/public_key.hrl").
