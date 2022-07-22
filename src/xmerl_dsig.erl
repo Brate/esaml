@@ -54,23 +54,36 @@ sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertBin) when is_binary(CertBin
     sign(ElementIn, PrivateKey, CertBin, "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256").
 
 -spec sign(Element :: #xmlElement{}, PrivateKey :: #'RSAPrivateKey'{}, CertBin :: binary(), SignatureMethod :: sig_method() | sig_method_uri()) -> #xmlElement{}.
-sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertBin, SigMethod) when is_binary(CertBin) ->
+sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertBin, SigMethod) ->
+  sign(ElementIn, PrivateKey, CertBin, SigMethod, enveloped).
+
+-spec sign(Element :: #xmlElement{}, PrivateKey :: #'RSAPrivateKey'{}, CertBin :: binary(),
+    SignatureMethod :: sig_method() | sig_method_uri(), atom()) -> #xmlElement{}.
+sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertBin, SigMethod, enveloped) when is_binary(CertBin) ->
+  {Element, SigElem} = sign(ElementIn, PrivateKey, CertBin, SigMethod, detached),
+  Element#xmlElement{content = [SigElem | Element#xmlElement.content]};
+
+sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertBin, SigMethod, detached) when is_binary(CertBin) ->
     % get rid of any previous signature
     ElementStrip = strip(ElementIn),
 
     % make sure the root element has an ID... if it doesn't yet, add one
-    {Element, Id} = case lists:keyfind('ID', 2, ElementStrip#xmlElement.attributes) of
-        #xmlAttribute{value = CapId} -> {ElementStrip, CapId};
-        _ ->
-            case lists:keyfind('id', 2, ElementStrip#xmlElement.attributes) of
-                #xmlAttribute{value = LowId} -> {ElementStrip, LowId};
-                _ ->
-                    NewId = esaml_util:unique_id(),
-                    Attr = #xmlAttribute{name = 'ID', value = NewId, namespace = #xmlNamespace{}},
-                    NewAttrs = [Attr | ElementStrip#xmlElement.attributes],
-                    Elem = ElementStrip#xmlElement{attributes = NewAttrs},
-                    {Elem, NewId}
-            end
+    Ids = lists:filter(fun(false) -> false ; (_) -> true end,
+      [lists:keyfind('id', #xmlAttribute.name, ElementStrip#xmlElement.attributes)] ++
+        [lists:keyfind('ID', #xmlAttribute.name, ElementStrip#xmlElement.attributes)] ++
+        [lists:keyfind('Id', #xmlAttribute.name, ElementStrip#xmlElement.attributes)]
+    ),
+
+    {Element, Id} = case length(Ids) of
+      0 ->
+        NewId = esaml_util:unique_id(),
+        Attr = #xmlAttribute{name = 'ID', value = NewId, namespace = #xmlNamespace{}},
+        NewAttrs = [Attr | ElementStrip#xmlElement.attributes],
+        Elem = ElementStrip#xmlElement{attributes = NewAttrs},
+        {Elem, NewId};
+      _ ->
+        #xmlAttribute{value = CapId} = lists:nth(1,  Ids),
+        {ElementStrip, CapId}
     end,
 
     {HashFunction, DigestMethod, SignatureMethodAlgorithm} = signature_props(SigMethod),
@@ -124,7 +137,10 @@ sign(ElementIn, PrivateKey = #'RSAPrivateKey'{}, CertBin, SigMethod) when is_bin
                     #xmlElement{name = 'ds:X509Certificate', content = [#xmlText{value = Cert64} ]}]}]}
         ]
     }),
-    Element#xmlElement{content = [SigElem | Element#xmlElement.content]}.
+
+  {Element, SigElem}.
+
+
 
 %% @doc Returns the canonical digest of an (optionally signed) element
 %%
